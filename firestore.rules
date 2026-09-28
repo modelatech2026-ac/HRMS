@@ -1,73 +1,42 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Default Deny
-    match /{document=**} {
-      allow read, write: if false;
-    }
 
     function isSignedIn() {
       return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn()
+        && request.auth.token.email == "modelatech2026@gmail.com"
+        && request.auth.token.email_verified == true;
     }
 
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    function isSuperAdminEmail() {
-      return isSignedIn() &&
-        request.auth.token.email != null &&
-        request.auth.token.email.lower() in ['modelatech2026@gmail.com', 'sushoovandas@gmail.com'];
+    match /access_requests/{userId} {
+      // Owner can read their own request; admin can read/list all.
+      allow read: if isOwner(userId) || isSuperAdmin();
+
+      // Owner can create only their own request, and only as PENDING.
+      allow create: if isOwner(userId)
+        && request.resource.data.uid == userId
+        && request.resource.data.status == "PENDING"
+        && request.resource.data.role == "PENDING";
+
+      // Owner can update their own doc (e.g. name/photo) but can NOT
+      // change status, role or uid (prevents self-approval).
+      allow update: if isOwner(userId)
+        && !request.resource.data.diff(resource.data).affectedKeys()
+             .hasAny(["status", "role", "uid"]);
     }
 
-    function isSuperAdminDoc() {
-      return isSignedIn() &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['Super Admin', 'SUPER_ADMIN', 'SUPERADMIN'];
-    }
-
-    function isSuperAdmin() {
-      return isSuperAdminEmail() || isSuperAdminDoc();
-    }
-
-    function isHRAdmin() {
-      return isSuperAdmin() || (
-        isSignedIn() &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['HR Admin', 'HR_ADMIN', 'Admin', 'Super Admin', 'SUPER_ADMIN', 'SUPERADMIN'])
-      );
-    }
-
-    // Access Requests: Global synchronization for Admin Nexus
-    // - Authenticated users can immediately read/create their own request without permission-denied hangs
-    // - Super Admins have full access
-    match /access_requests/{requestId} {
-      allow read: if isOwner(requestId) || isSuperAdmin() || !isSignedIn();
-      allow create: if isOwner(requestId) || isSuperAdmin() || !isSignedIn();
-      allow update, delete: if isSuperAdmin();
-    }
-
-    // User accounts:
-    // - Authenticated users can read and write/update their own user document without causing permission-denied hangs
-    // - Super Admins have full access
-    match /users/{userId} {
-      allow read: if isOwner(userId) || isSuperAdmin() || !isSignedIn();
-      allow create: if isOwner(userId) || isSuperAdmin() || !isSignedIn();
-      allow update: if isOwner(userId) || isSuperAdmin();
-      allow delete: if isSuperAdmin();
-    }
-
-    // Employee Master
-    match /employees/{employeeId} {
-      allow read: if isSignedIn() || !isSignedIn();
-      allow create, update, delete: if isHRAdmin();
-    }
-
-    // Activity Logs (Append-only)
-    match /activityLogs/{logId} {
-      allow read: if isSignedIn() || isSuperAdmin();
-      allow create: if isSignedIn() || isSuperAdmin();
-      allow update, delete: if false; // strictly immutable append-only
+    // Super admin: full access everywhere (includes delete).
+    match /{document=**} {
+      allow read, write, delete: if isSuperAdmin();
     }
   }
 }
