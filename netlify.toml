@@ -1,0 +1,26 @@
+# Netlify Configuration for Modela Connect SPA
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# SPA Client-Side Routing: rewrite all routes to index.html with 200 status
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Headers ensuring public accessibility and modern web security
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(self)"
+
+# Long-term caching for immutable hashed assets
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
